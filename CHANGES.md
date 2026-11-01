@@ -12,6 +12,11 @@ catalog, including exact values, conditions and unchanged fields, is
 - Chat messages and command usage of telemetry, team tracking and the update check, and the
   startup error screen, use language keys too.
 
+## Machine certification
+
+- The Industrial Apiary requires certificates only up to HV instead of UV, which is the
+  tier GregTech registers it at.
+
 ## Main menu
 
 - Custom Main Menu displays an amber pixel badge with `EXTRA NERF` and the

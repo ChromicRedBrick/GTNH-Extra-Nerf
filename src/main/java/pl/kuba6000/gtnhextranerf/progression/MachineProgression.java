@@ -4,6 +4,7 @@ import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 
+import gregtech.api.enums.MetaTileEntityIDs;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.MetaTileEntity;
 import gregtech.api.metatileentity.implementations.MTEBasicMachine;
@@ -19,7 +20,17 @@ public final class MachineProgression {
         if (EnergyHatchCertification.isEnergyHatch(machine))
             return ProgressionTier.forMachine(((MTEHatch) machine).mTier, false);
         if (!(machine instanceof MTEBasicMachine)) return null;
+        if (isIndustrialApiary(machine)) return ProgressionTier.HV;
         return ProgressionTier.forMachine(((MTEBasicMachine) machine).mTier, machine.isSteampowered());
+    }
+
+    /**
+     * GregTech registers the Industrial Apiary as a single UV machine, but it is meant to be usable from HV. Matched by
+     * its registered ID, so Forestry's classes are never loaded.
+     */
+    private static boolean isIndustrialApiary(MetaTileEntity machine) {
+        IGregTechTileEntity tile = machine.getBaseMetaTileEntity();
+        return tile != null && tile.getMetaTileID() == MetaTileEntityIDs.INDUSTRIAL_APIARY.ID;
     }
 
     /** Runs every tick for every machine, so it only compares masks and never names the missing certificate. */

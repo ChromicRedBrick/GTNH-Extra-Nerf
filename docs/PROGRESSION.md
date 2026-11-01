@@ -8,6 +8,8 @@ From MV upwards they also require every paid certification up to their tier:
 MV through MAX. Each is earned by payment without an exam. Higher-tier
 basic machines require all registered gates up to their tier. LuV through MAX
 currently use provisional item fees; MAX remains available with its MHDCSM fee.
+The Industrial Apiary is the one exception: GregTech registers it as a UV
+machine, but it requires only the certificates up to HV.
 Energy and dynamo hatches from LV upwards require the same chain of certificates
 up to their own voltage tier, including multi-amp, laser and wireless variants.
 Multiblock overclocking and parallel rules remain native; certification does not
