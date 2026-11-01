@@ -1,0 +1,88 @@
+package pl.kuba6000.gtnhextranerf.progression;
+
+import net.minecraft.world.World;
+import net.minecraft.world.WorldServer;
+import net.minecraftforge.common.DimensionManager;
+
+import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
+import gregtech.api.metatileentity.MetaTileEntity;
+import gregtech.api.metatileentity.implementations.MTEBasicMachine;
+import gregtech.api.metatileentity.implementations.MTEHatch;
+import pl.kuba6000.gtnhextranerf.GTNHExtraNerf;
+
+/** Server-authoritative gate. Clients receive the missing certificate through ModularUI. */
+public final class MachineProgression {
+
+    private MachineProgression() {}
+
+    public static ProgressionTier requiredTier(MetaTileEntity machine) {
+        if (EnergyHatchCertification.isEnergyHatch(machine))
+            return ProgressionTier.forMachine(((MTEHatch) machine).mTier, false);
+        if (!(machine instanceof MTEBasicMachine)) return null;
+        return ProgressionTier.forMachine(((MTEBasicMachine) machine).mTier, machine.isSteampowered());
+    }
+
+    /** Runs every tick for every machine, so it only compares masks and never names the missing certificate. */
+    public static boolean isLocked(MetaTileEntity machine) {
+        ProgressionTier required = requiredTier(machine);
+        if (required == null) return false;
+        World world = worldOf(machine);
+        if (world == null) return true;
+        if (world.isRemote) return false;
+        return data(world).isMissing(required);
+    }
+
+    public static ProgressionTier missingTier(MetaTileEntity machine) {
+        ProgressionTier required = requiredTier(machine);
+        if (required == null) return null;
+        World world = worldOf(machine);
+        if (world == null) return ProgressionTier.STEAM;
+        if (world.isRemote) return null;
+        return data(world).missing(required);
+    }
+
+    private static World worldOf(MetaTileEntity machine) {
+        IGregTechTileEntity tile = machine.getBaseMetaTileEntity();
+        return tile == null ? null : tile.getWorld();
+    }
+
+    public static boolean certify(World world, ProgressionTier tier) {
+        ProgressionData data = data(world);
+        boolean unlocked = data.unlock(tier);
+        // Judged when the certificate is earned: waiting until a later report would let an old-enough world pass.
+        if (unlocked && TelemetryEligibility.tooEarly(tier, world.getTotalWorldTime()) && data.blockTelemetry())
+            GTNHExtraNerf.LOG.info(
+                "Telemetry is off for this world for good: the {} certificate was earned before the world had run 5 hours",
+                tier.id());
+        return unlocked;
+    }
+
+    public static boolean isCertified(World world, ProgressionTier tier) {
+        return data(world).isUnlocked(tier);
+    }
+
+    public static boolean revoke(World world, ProgressionTier tier) {
+        return data(world).revoke(tier);
+    }
+
+    public static long certificateEpoch(World world, ProgressionTier tier) {
+        return data(world).certificateEpoch(tier);
+    }
+
+    public static boolean isCurrentCertificate(World world, ProgressionTier tier, long issuedEpoch) {
+        return data(world).isCurrentCertificate(tier, issuedEpoch);
+    }
+
+    private static ProgressionData data(World world) {
+        if (world == null || world.isRemote) throw new IllegalStateException("Certification requires a server world");
+        WorldServer overworld = DimensionManager.getWorld(0);
+        if (overworld == null) throw new IllegalStateException("Progression overworld unavailable");
+        ProgressionData data = (ProgressionData) overworld.mapStorage
+            .loadData(ProgressionData.class, ProgressionData.NAME);
+        if (data == null) {
+            data = new ProgressionData();
+            overworld.mapStorage.setData(ProgressionData.NAME, data);
+        }
+        return data;
+    }
+}

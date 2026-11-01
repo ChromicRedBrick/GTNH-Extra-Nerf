@@ -1,0 +1,79 @@
+
+name: Release tagged build
+
+on:
+  push:
+    tags: [ '*' ]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      VERSION: ${{ github.ref_name }}
+      RELEASE_VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: |
+            8
+            17
+            21
+            25
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          validate-wrappers: true
+      - name: Build and verify the runtime JAR
+        run: bash gradlew --build-cache -PtelemetryPython=python3 check assemble telemetryReleaseInfo
+      - name: Prepare release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --json body > build/telemetry/release-body.json; then
+            :
+          elif [[ -f ".changelogs/$GITHUB_REF_NAME.md" ]]; then
+            python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          body = Path('.changelogs', os.environ['GITHUB_REF_NAME'] + '.md').read_text(encoding='utf-8')
+          Path('build/telemetry/release-body.json').write_text(json.dumps({'body': body}), encoding='utf-8')
+          PY
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$GITHUB_REF_NAME" > build/telemetry/release-body.json
+          fi
+      - name: Validate the final JAR and prepare its disclosure
+        run: >-
+          python3 .github/scripts/telemetry_release_metadata.py
+          --directory build/libs
+          --tag "$GITHUB_REF_NAME"
+          --output build/telemetry/release.json
+          --release-body-json build/telemetry/release-body.json
+          --notes-output build/telemetry/release-notes.md
+      - name: Publish only the final runtime JAR and descriptor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifact=$(python3 -c 'import json; print(json.load(open("build/telemetry/release.json"))["artifact"])')
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file build/telemetry/release-notes.md
+            gh release upload "$GITHUB_REF_NAME" "build/libs/$artifact" build/telemetry/release.json --clobber
+          else
+            flags=()
+            if [[ "$GITHUB_REF_NAME" == *-snapshot ]]; then flags+=(--prerelease); fi
+            gh release create "$GITHUB_REF_NAME" --notes-file build/telemetry/release-notes.md \
+              "${flags[@]}" "build/libs/$artifact" build/telemetry/release.json
+          fi

@@ -1,0 +1,3 @@
+[submodule "gradle/GTNHGradle"]
+	path = gradle/GTNHGradle
+	url = https://github.com/Pxx500/GTNHGradle.git

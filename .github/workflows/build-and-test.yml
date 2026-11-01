@@ -1,0 +1,23 @@
+name: Build and test
+
+on:
+  pull_request:
+    branches: [ master, main ]
+  push:
+    branches: [ master, main ]
+
+jobs:
+  build-and-test:
+    uses: GTNewHorizons/GTNH-Actions-Workflows/.github/workflows/build-and-test.yml@master
+    with:
+      # Keep compilation, tests, Checkstyle and Spotless, but skip the
+      # standalone runServer task. PatchAudit requires the complete modpack.
+      client-only: true
+    secrets: inherit
+
+  script-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify release metadata and full-pack runner scripts
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'

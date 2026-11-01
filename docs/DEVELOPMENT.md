@@ -1,0 +1,77 @@
+# Development guide
+
+## General rule
+
+Every gameplay patch should own one precise piece of upstream behavior. If the
+upstream target is absent or ambiguous, production startup must fail with
+useful diagnostics instead of applying a guess. A deobfuscated development
+launch logs and skips that patch so reduced local runtimes can still boot.
+
+This also applies to known native loot-table mismatches during initial loading:
+the native editor's changes are rolled back, the failed audit is retained, and
+startup continues with lootbag opening unavailable in integrated dev worlds.
+It is not a blanket exception handler: programming and rollback failures remain
+fatal. Production and runtime loot reload validation remain strict.
+
+## Before submitting a change
+
+- Keep dependencies and the GTNHGradle submodule pinned.
+- Add a behavior test where possible; avoid relying only on checks that search
+  source text.
+- Run `gradlew check`.
+- Run the Python server-harness tests.
+- For gameplay, mixin or dependency changes, run a complete GTNH server.
+- Confirm there is no `AuditManager` integrity warning/failure and no generated
+  crash report.
+- Update [`NERFS.md`](NERFS.md) and the relevant summaries.
+
+## Changing recipes
+
+Use the exact original recipe as a compatibility signature. Include every
+value needed to distinguish it from parallel recipes. Avoid broad removal by
+output unless the upstream API provides no safer option and the result is
+validated.
+
+Register a `RecipeModifier` through a `RecipeModule`. Use the provided
+`RecipeContext` for every related edit; one modifier is a transaction across
+its machine/crafting registries. The registry owns activation, audit and
+development failure handling. See [Recipe modification system](RECIPE_SYSTEM.md)
+for API examples and compatibility guarantees.
+
+## Changing mixins
+
+Prefer argument/return modification, or WrapOperation when delegating an
+operation, over a full method overwrite. Any new overwrite should explain what upstream implementation it
+replaces and why a smaller injection was not suitable.
+
+Ordinal-based injection is fragile. Validate the actual recipe builder or
+arguments before mutating them, and exercise the final recipes in a full pack.
+
+## Updating documentation
+
+The human catalog must describe actual final behavior, not an old diff. State
+whether a change is a nerf, removal, new requirement or occasional buff.
+
+Implementation-level mappings are maintained separately in
+[`../AI`](../AI/README.md).
+
+### Mixin recipe integration tests
+
+`gradlew -PmixinIntegrationTests check` also compiles the Forge test fixture
+from `src/integrationTest/java`. Launch `runFullPackServer` with the same
+property to execute it after registry initialization. Success is reported as
+`Extra Nerf mixin integration tests PASSED`; assertion failures abort loading.
+The fixture constructs recipes without registering them and uses an isolated
+audit session. It covers direct and dielectric cable inputs, preservation of
+outputs/fluids/timing, duplicate PPS prevention, and ring recipe selection.
+
+This property creates a **test build** containing an additional Forge mod.
+Do not distribute that artifact. Run a normal `gradlew clean build` for the
+production artifact; the integration source directory is excluded by default.
+Ordinary JUnit does not provide Forge's LaunchClassLoader and initialized GT
+registries, so registry-dependent scenarios intentionally run inside the pack.
+When using the Python server harness on Windows, set `PYTHONIOENCODING=utf-8`
+so mod log messages cannot interrupt stdout capture with a CP1250 error.
+
+Keep ProcessingWire's single semantic injector. Avoid ordinals and per-recipe
+injection sites. Audit scope still includes recognition time inside callbacks.

@@ -1,0 +1,14 @@
+{
+  "modVersion": "0.0.6",
+  "jarSha256": "83f257cf3416c70b33a161571bfbdd800004ce46753a8b8af3073c88f5098c3c",
+  "payload": {
+    "sessionId": "62420a97-276b-4afd-a226-558f247802ac",
+    "onlinePlayers": 3,
+    "highestTier": "lv",
+    "singleplayer": true,
+    "jarProof": {
+      "salt": "000102030405060708090a0b0c0d0e0f",
+      "sha256": "a98185011f6712c16aea981a8bc62fc121242917d95edac929cbb838c4560ca1"
+    }
+  }
+}

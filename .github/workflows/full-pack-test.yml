@@ -1,0 +1,54 @@
+name: Full pack compatibility test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  full-pack-server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout mod repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Java toolchains
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: |
+            8
+            17
+            21
+            25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          validate-wrappers: true
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Test full-pack server harness
+        run: python .github/scripts/test_run_full_pack_server.py
+
+      - name: Run full-pack server
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python .github/scripts/run_full_pack_server.py
+          --ready-timeout 2400
+          --stop-timeout 300
+
+      - name: Upload full-pack server evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: full-pack-server-evidence
+          path: build/fullpack/server-evidence/
+          if-no-files-found: warn
+          retention-days: 30

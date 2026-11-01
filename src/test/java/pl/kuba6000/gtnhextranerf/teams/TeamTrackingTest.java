@@ -1,0 +1,201 @@
+package pl.kuba6000.gtnhextranerf.teams;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.net.URL;
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import pl.kuba6000.gtnhextranerf.Config;
+import pl.kuba6000.gtnhextranerf.telemetry.TelemetryClient;
+
+class TeamTrackingTest {
+
+    private static final UUID TEAM = UUID.fromString("0f8fad5b-d9cb-469f-a165-70867728950e");
+    private static final UUID ALEX = UUID.fromString("11111111-1111-4111-8111-111111111111");
+    private static final UUID STEVE = UUID.fromString("22222222-2222-4222-8222-222222222222");
+    private static final TeamTracking.Member LEADER = new TeamTracking.Member(ALEX, "Alex");
+    private static final TeamTracking.Member FRIEND = new TeamTracking.Member(STEVE, "Steve_2");
+
+    private boolean originallyEnabled;
+
+    @BeforeEach
+    void optIn() {
+        originallyEnabled = Config.teamTrackingEnabled;
+        Config.teamTrackingEnabled = true;
+    }
+
+    @AfterEach
+    void restoreConfiguration() {
+        Config.teamTrackingEnabled = originallyEnabled;
+    }
+
+    @Test
+    void theTeamIsNamedAfterItsLeader() {
+        assertEquals("Kuba's team", TeamTracking.teamName("Kuba"));
+    }
+
+    @Test
+    void theLeaderIsTheCommandSenderOtherwiseTheFirstPlayerOnline() {
+        List<TeamTracking.Member> online = Arrays.asList(FRIEND, LEADER);
+        assertSame(LEADER, TeamTracking.chooseLeader(LEADER, online));
+        assertSame(FRIEND, TeamTracking.chooseLeader(null, online));
+        assertNull(TeamTracking.chooseLeader(null, Collections.<TeamTracking.Member>emptyList()));
+    }
+
+    @Test
+    void reportCarriesTeamIdLeaderAndPlayers() throws Exception {
+        TeamClient client = new TeamClient(null, new URL("http://127.0.0.1:1"), new SecureRandom());
+        JsonObject report = new JsonParser()
+            .parse(
+                client.encode(
+                    new TeamTracking.Snapshot(TEAM, LEADER, "lv", false, Arrays.asList(LEADER, FRIEND)),
+                    () -> false))
+            .getAsJsonObject();
+        JsonObject expected = new JsonParser()
+            .parse(
+                "{\"teamId\":\"" + TEAM
+                    + "\",\"leader\":{\"id\":\""
+                    + ALEX
+                    + "\",\"name\":\"Alex\"},\"highestTier\":\"lv\",\"singleplayer\":false,\"players\":[{\"id\":\""
+                    + ALEX
+                    + "\",\"name\":\"Alex\"},{\"id\":\""
+                    + STEVE
+                    + "\",\"name\":\"Steve_2\"}],\"jarProof\":null}")
+            .getAsJsonObject();
+        assertEquals(expected, report);
+    }
+
+    @Test
+    void aSingleplayerWorldIsMarkedInTheReport() throws Exception {
+        TeamClient client = new TeamClient(null, new URL("http://127.0.0.1:1"), new SecureRandom());
+        JsonObject report = new JsonParser()
+            .parse(
+                client.encode(new TeamTracking.Snapshot(TEAM, LEADER, "lv", true, Arrays.asList(LEADER)), () -> false))
+            .getAsJsonObject();
+        assertTrue(
+            report.get("singleplayer")
+                .getAsBoolean());
+    }
+
+    @Test
+    void joiningPlayersAreToldAboutTeamTrackingAndWhereToReadMore() {
+        String notice = TeamTracking.joinNotice();
+        assertTrue(notice.contains("team tracking"));
+        assertTrue(notice.contains("Minecraft names"));
+        assertTrue(notice.contains("https://extranerf.kuba6000.pl/team-tracking"));
+    }
+
+    @Test
+    void theOptOutNoticeGivesTheTeamIdAndWhereToSendIt() {
+        String notice = TeamTracking.removalNotice(TEAM.toString());
+        assertTrue(notice.contains(TEAM.toString()));
+        assertTrue(notice.contains("extranerf@kuba6000.pl"));
+    }
+
+    @Test
+    void anInvalidTierIsRefused() {
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new TeamTracking.Snapshot(TEAM, LEADER, "LV!", false, new ArrayList<>()));
+    }
+
+    @Test
+    void anEmptyServerStillReportsItsTeam() throws Exception {
+        TeamClient client = new TeamClient(null, new URL("http://127.0.0.1:1"), new SecureRandom());
+        JsonObject report = new JsonParser()
+            .parse(
+                client.encode(new TeamTracking.Snapshot(TEAM, LEADER, "stone", false, new ArrayList<>()), () -> false))
+            .getAsJsonObject();
+        assertEquals(
+            0,
+            report.getAsJsonArray("players")
+                .size());
+    }
+
+    @Test
+    void invalidTeamsAreRefusedBeforeAnythingIsSent() {
+        assertThrows(IllegalArgumentException.class, () -> new TeamTracking.Member(ALEX, "bad name"));
+        assertThrows(IllegalArgumentException.class, () -> new TeamTracking.Member(ALEX, ""));
+        assertThrows(IllegalArgumentException.class, () -> new TeamTracking.Member(ALEX, "SeventeenCharacter"));
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new TeamTracking.Snapshot(
+                TEAM,
+                LEADER,
+                "lv",
+                false,
+                Arrays.asList(LEADER, new TeamTracking.Member(ALEX, "AlexAgain"))));
+        List<TeamTracking.Member> crowd = new ArrayList<>();
+        for (int i = 0; i <= TeamTracking.Snapshot.MAXIMUM_PLAYERS; i++)
+            crowd.add(new TeamTracking.Member(UUID.randomUUID(), "P" + i));
+        assertThrows(IllegalArgumentException.class, () -> new TeamTracking.Snapshot(TEAM, LEADER, "lv", false, crowd));
+    }
+
+    @Test
+    void capturesOnTheServerThreadAndSendsInTheBackgroundOnlyWhenDue() throws Exception {
+        Thread serverThread = Thread.currentThread();
+        AtomicInteger captures = new AtomicInteger();
+        AtomicReference<Thread> networkThread = new AtomicReference<>();
+        CountDownLatch delivered = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor(r -> new Thread(r, "team-test-worker"));
+        TeamTracking tracking = new TeamTracking((captured, cancelled) -> {
+            networkThread.set(Thread.currentThread());
+            delivered.countDown();
+            return new TelemetryClient.Response(204, 0);
+        }, executor, 1000, 100);
+        try {
+            java.util.function.Supplier<TeamTracking.Snapshot> snapshot = () -> {
+                assertSame(serverThread, Thread.currentThread());
+                captures.incrementAndGet();
+                return new TeamTracking.Snapshot(TEAM, LEADER, "lv", false, Arrays.asList(LEADER));
+            };
+            assertFalse(tracking.request(99, snapshot));
+            assertTrue(tracking.request(100, snapshot));
+            assertTrue(delivered.await(5, TimeUnit.SECONDS));
+            assertFalse(tracking.request(101, snapshot));
+            assertEquals(1, captures.get());
+            assertNotSame(serverThread, networkThread.get());
+        } finally {
+            tracking.close();
+        }
+    }
+
+    @Test
+    void turningTeamTrackingOffStopsCapturingAndSending() {
+        AtomicInteger captures = new AtomicInteger();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        TeamTracking tracking = new TeamTracking((captured, cancelled) -> {
+            fail("nothing may be sent");
+            return null;
+        }, executor, 1000, 0);
+        Config.teamTrackingEnabled = false;
+        try {
+            assertFalse(tracking.request(1000, () -> {
+                captures.incrementAndGet();
+                return null;
+            }));
+            assertEquals(0, captures.get());
+            assertTrue(executor.isShutdown());
+        } finally {
+            tracking.close();
+        }
+    }
+}

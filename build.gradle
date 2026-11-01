@@ -1,0 +1,113 @@
+
+plugins {
+    id 'com.gtnewhorizons.gtnhconvention'
+}
+
+fullPack {
+    cleanServerRuntime.set(true)
+}
+
+// The tag identifies the release; the completed JAR's SHA-256 goes into release.json.
+def telemetryReleaseTag = providers.gradleProperty('telemetryReleaseTag').orNull
+if (telemetryReleaseTag == null) {
+    if (providers.environmentVariable('GITHUB_REF_TYPE').getOrElse('') == 'tag') {
+        telemetryReleaseTag = providers.environmentVariable('GITHUB_REF_NAME').getOrElse('')
+    } else {
+        def exactTag = providers.exec {
+            commandLine 'git', 'describe', '--tags', '--exact-match', 'HEAD'
+            ignoreExitValue = true
+        }.standardOutput.asText.get().trim()
+        def dirty = providers.exec {
+            commandLine 'git', 'status', '--porcelain'
+        }.standardOutput.asText.get().trim()
+        telemetryReleaseTag = dirty.isEmpty() ? exactTag : ''
+    }
+}
+if (!telemetryReleaseTag.isEmpty() && !telemetryReleaseTag.matches('[!-~]{1,128}')) {
+    throw new GradleException('telemetryReleaseTag must be a printable ASCII release tag, at most 128 characters')
+}
+// RFG reads inheritance through URLClassLoader. Cached handles can point at an older
+// recompiled Minecraft JAR after another build in the same Gradle daemon.
+tasks.named('reobfJar').configure {
+    doFirst {
+        java.net.URLConnection.setDefaultUseCaches('jar', false)
+    }
+}
+tasks.withType(org.gradle.jvm.tasks.Jar).configureEach {
+    includeEmptyDirs = false
+    manifest.attributes('ExtraNerf-Telemetry-Release': telemetryReleaseTag)
+}
+
+def telemetryJar = tasks.named('reobfJar', org.gradle.jvm.tasks.Jar).flatMap { it.archiveFile }
+def telemetryReleaseOutput = layout.buildDirectory.file('telemetry/release.json')
+tasks.register('telemetryReleaseInfo', Exec) {
+    dependsOn tasks.named('reobfJar')
+    inputs.file(telemetryJar)
+    inputs.file(layout.projectDirectory.file('.github/scripts/telemetry_release_metadata.py'))
+    inputs.property('telemetryReleaseTag', telemetryReleaseTag)
+    outputs.file(telemetryReleaseOutput)
+    doFirst {
+        if (telemetryReleaseTag.isEmpty()) {
+            throw new GradleException('Use a clean release tag or -PtelemetryReleaseTag=YOUR_GITHUB_TAG')
+        }
+    }
+    commandLine providers.gradleProperty('telemetryPython').getOrElse('python'),
+        layout.projectDirectory.file('.github/scripts/telemetry_release_metadata.py').asFile,
+        '--jar', telemetryJar.get().asFile,
+        '--tag', telemetryReleaseTag,
+        '--output', telemetryReleaseOutput.get().asFile
+}
+
+// Opt-in Forge integration fixture. Ordinary builds never compile or package it.
+if (providers.gradleProperty('mixinIntegrationTests').isPresent() || providers.gradleProperty('brainrotterDevTests').isPresent()) {
+    sourceSets.main.java.srcDir('src/integrationTest/java')
+    if (providers.gradleProperty('brainrotterDevTests').isPresent()) {
+        sourceSets.main.java.exclude('**/MixinRecipeIntegrationTests.java', '**/LootOpeningIntegrationTests.java')
+    } else {
+        sourceSets.main.java.exclude('**/BrainrotterDevelopmentTests.java')
+    }
+} else if (providers.gradleProperty('telemetryIntegrationTests').isPresent()) {
+    sourceSets.main.java.srcDir('src/integrationTest/java')
+    sourceSets.main.java.exclude { element ->
+        !element.isDirectory() && element.file.path.replace('\\', '/').contains('/src/integrationTest/') &&
+            element.file.name != 'TelemetryIntegrationTests.java'
+    }
+}
+
+if (providers.gradleProperty('fullPackCi').isPresent()) {
+    def runtimePathFile = layout.buildDirectory.file('fullpack/server-runtime.path').get().asFile
+    def prepareFullPackServerForCi = tasks.register('prepareFullPackServerForCi') {
+        dependsOn tasks.named('prepareFullPackServer')
+
+        doLast {
+            if (!runtimePathFile.isFile()) {
+                throw new GradleException("Missing prepared full-pack server path: ${runtimePathFile}")
+            }
+
+            def runtimeDirectory = new File(runtimePathFile.getText('UTF-8').trim())
+            if (!runtimeDirectory.isDirectory()) {
+                throw new GradleException("Prepared full-pack server runtime does not exist: ${runtimeDirectory}")
+            }
+
+            new File(runtimeDirectory, 'eula.txt').setText('eula=true\n', 'UTF-8')
+            new File(runtimeDirectory, 'server.properties').setText('''\
+online-mode=false
+level-name=ci-world
+max-players=1
+view-distance=3
+motd=GTNH Extra Nerf CI
+''', 'UTF-8')
+        }
+    }
+
+    tasks.named('runFullPackServer') {
+        dependsOn prepareFullPackServerForCi
+    }
+}
+
+// Forward the preview flag to the forked dev client, not merely the Gradle JVM.
+tasks.named('runClient') {
+    if (providers.gradleProperty('forceAuditErrorScreen').map { it.toBoolean() }.getOrElse(false)) {
+        getExtraJvmArgs().add('-Dgtnhextranerf.forceAuditErrorScreen=true')
+    }
+}
