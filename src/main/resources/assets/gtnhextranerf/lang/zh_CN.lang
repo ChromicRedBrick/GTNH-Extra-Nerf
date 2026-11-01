@@ -319,3 +319,26 @@ gtnhextranerf.exam.steam.q10.a=加一个更大的储罐，毕竟法律规定，�
 gtnhextranerf.exam.steam.q10.b=生产更多蒸汽，或者少开几台机器，无论你觉得供需关系有多么不公平
 gtnhextranerf.exam.steam.q10.c=用更粗的管道，劝锅炉多产一点蒸汽
 gtnhextranerf.exam.steam.q10.d=无视此问题，万一它自己就好了呢
+
+# Chat messages and commands of telemetry, team tracking and the update check
+gtnhextranerf.telemetry.notice=Extra Nerf 遥测已开启：本服务器会上报在线玩家数量与推进阶段，仅用于社区统计，不会上报玩家名或 UUID。可用 /extranerftelemetry off 关闭。隐私政策：%s
+gtnhextranerf.telemetry.usage=/extranerftelemetry <status|off|on>
+gtnhextranerf.telemetry.status.inactive=已启用=%s；未激活：%s
+gtnhextranerf.telemetry.status.active=已激活；上次=%s；发送中=%s；下次=%s 秒后
+gtnhextranerf.team.notice=本服务器已开启 Extra Nerf 团队追踪：团队、推进阶段以及队内玩家的 Minecraft 用户名都会公开显示在 %s 上。详情：%s
+gtnhextranerf.team.removed=团队追踪已关闭。已发送的数据会保留在服务器上，一年后过期。如需立即删除，请发送邮件至 %s，并附上此团队 ID：%s
+gtnhextranerf.team.usage=/extranerfteam <status|on|off>
+gtnhextranerf.team.needs_player=团队追踪需要以一名玩家来命名团队。请先加入服务器，然后重新执行该命令
+gtnhextranerf.team.saved.none=尚无团队
+gtnhextranerf.team.saved.team=%s，ID %s
+gtnhextranerf.team.status.off=团队追踪：已关闭（%s）
+gtnhextranerf.team.status.inactive=团队追踪：已开启但未激活：%s（%s）
+gtnhextranerf.team.status.active=团队追踪：已开启（%s）；上次=%s；发送中=%s；下次=%s 秒后
+gtnhextranerf.update.available=GTNH Extra Nerf 有新版本可用：%s（当前已安装：%s）。下载：%s
+
+# Startup error screen
+gtnhextranerf.error.title=Extra Nerf 无法启动
+gtnhextranerf.error.supported=Extra Nerf 仅支持 GT New Horizons（GTNH）%s。
+gtnhextranerf.error.explanation=无法验证所需的配方改动。请使用受支持的整合包版本，并保留其原始模组与配置。
+gtnhextranerf.error.logs=完整错误报告见 logs/latest.log。改动安装前请先关闭游戏。
+gtnhextranerf.error.preview=开发预览版 —— 由 JVM 参数强制启用
